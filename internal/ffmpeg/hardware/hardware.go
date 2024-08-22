@@ -12,6 +12,7 @@ import (
 const (
 	EngineSoftware     = "software"
 	EngineVAAPI        = "vaapi"        // Intel iGPU and AMD GPU
+	EngineQSV          = "qsv"          // Intel GPU
 	EngineV4L2M2M      = "v4l2m2m"      // Raspberry Pi 3 and 4
 	EngineCUDA         = "cuda"         // NVidia on Windows and Linux
 	EngineDXVA2        = "dxva2"        // Intel on Windows
@@ -46,7 +47,7 @@ func MakeHardware(args *ffmpeg.Args, engine string, defaults map[string]string) 
 		}
 
 		// temporary disable probe for H265
-		if engine == "" && name != "h265" {
+		if engine == "" {
 			if engine = cache[name]; engine == "" {
 				engine = ProbeHardware(args.Bin, name)
 				cache[name] = engine
@@ -106,6 +107,24 @@ func MakeHardware(args *ffmpeg.Args, engine string, defaults map[string]string) 
 				args.AddFilter("hwupload")
 			}
 
+		case EngineQSV:
+			args.Codecs[i] = defaults[name+"/"+engine]
+
+			args.Input = "-hwaccel qsv -hwaccel_output_format qsv " + args.Input
+
+			for i, filter := range args.Filters {
+				if strings.HasPrefix(filter, "scale=") {
+					args.Filters[i] = "scale_qsv=" + filter[6:]
+				}				
+				if strings.HasPrefix(filter, "transpose=") {
+					if filter == "transpose=1,transpose=1" { // 180 degrees half-turn
+						args.Filters[i] = "vpp_qsv=transpose=4" // reversal
+					} else {
+						args.Filters[i] = "vpp_qsv=transpose=" + filter[10:]
+					}
+				}
+			}
+		
 		case EngineDXVA2:
 			args.Input = "-hwaccel dxva2 -hwaccel_output_format dxva2_vld " + args.Input
 			args.Codecs[i] = defaults[name+"/"+engine]
